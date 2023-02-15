@@ -391,6 +391,12 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
     XSPerfAccumulate("line_1_victim_way_" + Integer.toString(w, 10),  s1_fire && s1_double_line && !s1_port_hit(1) && OHToUInt(s1_victim_oh(1))  === w.U)
   }
 
+  /** <PERF> hit in ipf */
+  (0 until PortNumber).map { i =>
+    XSPerfAccumulate("port_" + Integer.toString(i, 10) + "_only_hit_in_ipf", s1_fire && s1_ipf_hit_latch(i) && !s1_port_hit(i))
+    XSPerfAccumulate("port_" + Integer.toString(i, 10) + "_both_hit_in_ipf_and_array", s1_fire && s1_ipf_hit_latch(i) && s1_port_hit(i))
+  }
+
   /**
     ******************************************************************************
     * ICache Stage 2

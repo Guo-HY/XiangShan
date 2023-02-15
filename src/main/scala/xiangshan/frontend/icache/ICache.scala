@@ -30,6 +30,7 @@ import xiangshan.cache._
 import utils._
 import xiangshan.backend.fu.PMPReqBundle
 import xiangshan.cache.mmu.{TlbRequestIO, TlbReq}
+import difftest._
 
 case class ICacheParameters(
     nSets: Int =  128,
@@ -768,4 +769,24 @@ class ICacheImp(outer: ICache) extends LazyModuleImp(outer) with HasICacheParame
   ))
   cacheOpDecoder.io.error := io.error
   assert(!((dataArrayWrapper.io.cacheOp.resp.valid +& metaArrayWrapper.io.cacheOp.resp.valid) > 1.U))
+
+
+  /* difftest debug IO */
+  val diffICacheDebug = Module(new DifftestICacheDebug)
+  val timer = GTimer()
+  diffICacheDebug.io.clock := clock
+  diffICacheDebug.io.coreid := io.hartId
+  diffICacheDebug.io.time := timer
+  diffICacheDebug.io.write_en := missUnit.io.meta_write.fire | ipfBuffer.io.move.meta_write.fire
+  when(missUnit.io.meta_write.fire) {
+    diffICacheDebug.io.write_master := false.B
+    diffICacheDebug.io.ptag := missUnit.io.meta_write.bits.phyTag
+    diffICacheDebug.io.pidx := missUnit.io.meta_write.bits.phyIdx
+    diffICacheDebug.io.waymask := missUnit.io.meta_write.bits.waymask
+  } .otherwise {
+    diffICacheDebug.io.write_master := true.B
+    diffICacheDebug.io.ptag := ipfBuffer.io.move.meta_write.bits.phyTag
+    diffICacheDebug.io.pidx := ipfBuffer.io.move.meta_write.bits.phyIdx
+    diffICacheDebug.io.waymask := ipfBuffer.io.move.meta_write.bits.waymask
+  }
 }

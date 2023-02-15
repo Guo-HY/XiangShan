@@ -569,6 +569,9 @@ class IPrefetchPipe(implicit p: Parameters) extends  IPrefetchModule
   p3_ready := toMissUnit.enqReq.ready || !enableBit || p3_discard
   p3_fire  := toMissUnit.enqReq.fire()
 
+  /** <PERF> all cache prefetch num */
+  XSPerfAccumulate("ipf_send_get_to_L2", p3_fire)
+
   if (DebugFlags.fdip) {
 //    when(toMissUnit.enqReq.fire()){
 //      printf("(%d) PIQ enqueue, vaddr: 0x%x, paddr: 0x%x\n",GTimer(), p3_vaddr, p3_paddr)
