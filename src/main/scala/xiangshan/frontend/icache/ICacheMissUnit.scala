@@ -192,6 +192,16 @@ class ICacheMissEntry(edge: TLEdgeOut, id: Int)(implicit p: Parameters) extends 
     }
   }
 
+  if (env.EnableDifftest && DebugFlags.use_ideal_icache) {
+    val diff_ideal_event = Module(new DifftestICacheIdealRefill)
+    diff_ideal_event.io.clock := clock
+    diff_ideal_event.io.paddr := req.paddr
+    diff_ideal_event.io.coreid := 0.U
+    diff_ideal_event.io.index := 0.U
+    diff_ideal_event.io.valid := io.meta_write.fire
+    diff_ideal_event.io.data_vec := respDataReg.asUInt.asTypeOf(diff_ideal_event.io.data_vec)
+  }
+
   XSPerfAccumulate(
     "entryPenalty" + Integer.toString(id, 10),
     BoolStopWatch(

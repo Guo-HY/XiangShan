@@ -19,6 +19,7 @@ package xiangshan.frontend.icache
 import chipsalliance.rocketchip.config.Parameters
 import chisel3._
 import chisel3.util._
+import difftest.DifftestICacheIdealRead
 import freechips.rocketchip.tilelink.ClientStates
 import xiangshan._
 import xiangshan.cache.mmu._
@@ -420,7 +421,8 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
   val s2_only_first   = RegEnable(s1_only_first, s1_fire)
   val s2_double_line  = RegEnable(s1_double_line, s1_fire)
   val s2_hit          = RegEnable(s1_hit   , s1_fire)
-  val s2_port_hit     = RegEnable(s1_port_hit, s1_fire)
+//  val s2_port_hit     = RegEnable(s1_port_hit, s1_fire)
+  val s2_port_hit     = Vec(2, Wire(Bool()))
   val s2_bank_miss    = RegEnable(s1_bank_miss, s1_fire)
   val s2_waymask      = RegEnable(s1_victim_oh, s1_fire)
   val s2_tag_match_vec = RegEnable(s1_tag_match_vec, s1_fire)
@@ -744,10 +746,7 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
   }
 
   //** use hit one-hot select data
-  val s2_hit_datas    = VecInit(s2_data_cacheline.zipWithIndex.map { case(bank, i) =>
-    val port_hit_data = Mux1H(s2_tag_match_vec(i).asUInt, bank)
-    port_hit_data
-  })
+  val s2_hit_datas    = Wire(Vec(2, UInt(blockBits.W)))
 
   val s2_register_datas       = Wire(Vec(2, UInt(blockBits.W)))
 
@@ -756,6 +755,28 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
     // else    bank    := Mux(s2_port_hit(i), s2_hit_datas(i), Mux(miss_0_s2_1_latch,reservedRefillData(0), Mux(miss_1_s2_1_latch,reservedRefillData(1), missSlot(1).m_data)))
     if(i == 0) bank := Mux(miss_0_s2_0_latch,reservedRefillData(0), Mux(miss_1_s2_0_latch,reservedRefillData(1), missSlot(0).m_data))
     else    bank    := Mux(miss_0_s2_1_latch,reservedRefillData(0), Mux(miss_1_s2_1_latch,reservedRefillData(1), missSlot(1).m_data))
+  }
+
+  if (env.EnableDifftest && DebugFlags.use_ideal_icache) {
+    val diff_ideal_events = (0 until PortNumber).map { i =>
+      val diff_ideal_event = Module(new DifftestICacheIdealRead)
+      diff_ideal_event.io.clock := clock
+      diff_ideal_event.io.coreid := 0.U
+      diff_ideal_event.io.index := i.U
+      if (i == 0) { diff_ideal_event.io.valid := s2_valid } else {
+        diff_ideal_event.io.valid := s2_valid && s2_double_line
+      }
+      diff_ideal_event.io.paddr := s2_req_paddr(i)
+      s2_port_hit(i) := diff_ideal_event.io.hitInIdealCache
+      s2_hit_datas(i) := diff_ideal_event.io.hitData.asUInt
+      diff_ideal_event
+    }
+  } else {
+    s2_port_hit     := RegEnable(s1_port_hit, s1_fire)
+    s2_hit_datas    := VecInit(s2_data_cacheline.zipWithIndex.map { case(bank, i) =>
+      val port_hit_data = Mux1H(s2_tag_match_vec(i).asUInt, bank)
+      port_hit_data
+    })
   }
 
   /** response to IFU */
