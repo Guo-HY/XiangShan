@@ -200,6 +200,12 @@ class ICacheMissEntry(edge: TLEdgeOut, id: Int)(implicit p: Parameters) extends 
     diff_ideal_event.io.index := 0.U
     diff_ideal_event.io.valid := io.meta_write.fire
     diff_ideal_event.io.data_vec := respDataReg.asUInt.asTypeOf(diff_ideal_event.io.data_vec)
+    when (io.meta_write.fire) {
+      printf("<%d> refill ideal:paddr=0x%x,data_vec=0x%x_%x_%x_%x_%x_%x_%x_%x,respDataReg=0x%x\n", GTimer(), diff_ideal_event.io.paddr,
+        diff_ideal_event.io.data_vec(0), diff_ideal_event.io.data_vec(1),diff_ideal_event.io.data_vec(2),
+        diff_ideal_event.io.data_vec(3),diff_ideal_event.io.data_vec(4),diff_ideal_event.io.data_vec(5),
+        diff_ideal_event.io.data_vec(6),diff_ideal_event.io.data_vec(7),respDataReg.asUInt)
+    }
   }
 
   XSPerfAccumulate(

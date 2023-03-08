@@ -100,7 +100,7 @@ class MinimalConfig(n: Int = 1) extends Config(
           nProbeEntries = 2,
           nPrefetchEntries = 2,
           nPrefBufferEntries = 32,
-          hasPrefetch = true
+          hasPrefetch = false
         ),
         dcacheParametersOpt = Some(DCacheParameters(
           nSets = 64, // 32KB DCache

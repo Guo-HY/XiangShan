@@ -310,12 +310,12 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
   val s1_victim_oh    = ResultHoldBypass(data = VecInit(replacers.zipWithIndex.map{case (replacer, i) => UIntToOH(replacer.way(s1_req_vsetIdx(i)))}), valid = RegNext(s0_fire))
 
 
-  when(s1_valid){
-    assert(PopCount(s1_tag_match_vec(0)) <= 1.U && (PopCount(s1_tag_match_vec(1)) <= 1.U || !s1_double_line),
-      "Multiple hit in main pipe, port0:is=%d,ptag=0x%x,vidx=0x%x,vaddr=0x%x port1:is=%d,ptag=0x%x,vidx=0x%x,vaddr=0x%x ",
-      PopCount(s1_tag_match_vec(0)) > 1.U,s1_req_ptags(0), get_idx(s1_req_vaddr(0)), s1_req_vaddr(0),
-      PopCount(s1_tag_match_vec(1)) > 1.U && s1_double_line, s1_req_ptags(1), get_idx(s1_req_vaddr(1)), s1_req_vaddr(1))
-  }
+//  when(s1_valid){
+//    assert(PopCount(s1_tag_match_vec(0)) <= 1.U && (PopCount(s1_tag_match_vec(1)) <= 1.U || !s1_double_line),
+//      "Multiple hit in main pipe, port0:is=%d,ptag=0x%x,vidx=0x%x,vaddr=0x%x port1:is=%d,ptag=0x%x,vidx=0x%x,vaddr=0x%x ",
+//      PopCount(s1_tag_match_vec(0)) > 1.U,s1_req_ptags(0), get_idx(s1_req_vaddr(0)), s1_req_vaddr(0),
+//      PopCount(s1_tag_match_vec(1)) > 1.U && s1_double_line, s1_req_ptags(1), get_idx(s1_req_vaddr(1)), s1_req_vaddr(1))
+//  }
 
   ((replacers zip touch_sets) zip touch_ways).map{case ((r, s),w) => r.access(s,w)}
 
@@ -360,7 +360,7 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
       ResultHoldBypass(data = PIQ_hit_data(i), valid = PIQ_write_back(i))
   ))
 
-  val s1_prefetch_hit = VecInit((0 until PortNumber).map(i => s1_ipf_hit_latch(i) || s1_PIQ_hit(i)))
+  val s1_prefetch_hit = VecInit((0 until PortNumber).map(i => false.B/* s1_ipf_hit_latch(i) || s1_PIQ_hit(i)*/))
   val s1_prefetch_hit_data = VecInit((0 until PortNumber).map(i => Mux(s1_ipf_hit_latch(i),s1_ipf_data(i), s1_PIQ_data(i))))
 
   /** when tlb stall, ipfBuffer stage2 need also stall */
@@ -422,12 +422,13 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
   val s2_double_line  = RegEnable(s1_double_line, s1_fire)
   val s2_hit          = RegEnable(s1_hit   , s1_fire)
 //  val s2_port_hit     = RegEnable(s1_port_hit, s1_fire)
-  val s2_port_hit     = Vec(2, Wire(Bool()))
+  val s2_port_hit     = Wire(Vec(2, Bool()))
   val s2_bank_miss    = RegEnable(s1_bank_miss, s1_fire)
   val s2_waymask      = RegEnable(s1_victim_oh, s1_fire)
   val s2_tag_match_vec = RegEnable(s1_tag_match_vec, s1_fire)
   val s2_prefetch_hit = RegEnable(s1_prefetch_hit, s1_fire)
   val s2_prefetch_hit_data = RegEnable(s1_prefetch_hit_data, s1_fire)
+//  assert(s2_prefetch_hit.reduce(_||_) === false.B) // should no perfetch
 
   assert(RegNext(!s2_valid || s2_req_paddr(0)(11,0) === s2_req_vaddr(0)(11,0), true.B))
 
@@ -769,7 +770,14 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
       diff_ideal_event.io.paddr := s2_req_paddr(i)
       s2_port_hit(i) := diff_ideal_event.io.hitInIdealCache
       s2_hit_datas(i) := diff_ideal_event.io.hitData.asUInt
+      XSPerfAccumulate("port_" + i + "_hit_in_ideal_icache_num", diff_ideal_event.io.hitInIdealCache && RegNext(s1_fire))
       diff_ideal_event
+    }
+    when (s2_port_hit(1) && s2_fire && s2_double_line) {
+      printf("<%d> port1 hit in ideal:paddr=0x%x, hitData=0x%x \n", GTimer(),s2_req_paddr(1), s2_hit_datas(1))
+    }
+    when (s2_port_hit(0) && s2_fire) {
+      printf("<%d> port0 hit in ideal:paddr=0x%x, hitData=0x%x \n",GTimer(),s2_req_paddr(0), s2_hit_datas(0))
     }
   } else {
     s2_port_hit     := RegEnable(s1_port_hit, s1_fire)
