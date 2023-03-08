@@ -345,7 +345,7 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
   val s1_wait_vec     = VecInit((0 until PortNumber).map(i => !s1_port_hit(i) && !s1_ipf_hit_latch(i) && PIQ_hit(i) && !PIQ_data_valid(i) && !PIQ_hold_res(i)))
   val PIQ_write_back  = VecInit((0 until PortNumber).map(i => !s1_port_hit(i) && !s1_ipf_hit_latch(i) && PIQ_hit(i) && PIQ_data_valid(i)))
   val s1_PIQ_hit      = VecInit((0 until PortNumber).map(i => PIQ_write_back(i) || PIQ_hold_res(i)))
-  s1_wait := s1_wait_vec(0) || (s1_double_line && s1_wait_vec(1))
+  s1_wait := false.B //s1_wait_vec(0) || (s1_double_line && s1_wait_vec(1))
 
   (0 until PortNumber).foreach(i =>
     when(s1_fire){
@@ -393,6 +393,18 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
   }
 
   XSPerfAccumulate("mainPipe_stage1_block_by_piq_cycles", s1_valid && s1_wait)
+
+  val diff_ideal_events = (0 until PortNumber).map { i =>
+    val diff_ideal_event = Module(new DifftestICacheIdealRead)
+    diff_ideal_event.io.clock := clock
+    diff_ideal_event.io.coreid := 0.U
+    diff_ideal_event.io.index := i.U
+    if (i == 0) { diff_ideal_event.io.valid := s1_fire } else {
+      diff_ideal_event.io.valid := s1_fire && s1_double_line
+    }
+    diff_ideal_event.io.paddr := s1_req_paddr(i)
+    diff_ideal_event
+  }
 
   /**
     ******************************************************************************
@@ -758,20 +770,11 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
     else    bank    := Mux(miss_0_s2_1_latch,reservedRefillData(0), Mux(miss_1_s2_1_latch,reservedRefillData(1), missSlot(1).m_data))
   }
 
-  if (env.EnableDifftest && DebugFlags.use_ideal_icache) {
-    val diff_ideal_events = (0 until PortNumber).map { i =>
-      val diff_ideal_event = Module(new DifftestICacheIdealRead)
-      diff_ideal_event.io.clock := clock
-      diff_ideal_event.io.coreid := 0.U
-      diff_ideal_event.io.index := i.U
-      if (i == 0) { diff_ideal_event.io.valid := s2_valid } else {
-        diff_ideal_event.io.valid := s2_valid && s2_double_line
-      }
-      diff_ideal_event.io.paddr := s2_req_paddr(i)
-      s2_port_hit(i) := diff_ideal_event.io.hitInIdealCache
-      s2_hit_datas(i) := diff_ideal_event.io.hitData.asUInt
+    (0 until PortNumber).foreach { i =>
+      val diff_ideal_event = diff_ideal_events(i)
+      s2_port_hit(i) := ResultHoldBypass(data = diff_ideal_event.io.hitInIdealCache, valid = RegNext(s1_fire))
+      s2_hit_datas(i) := ResultHoldBypass(data = diff_ideal_event.io.hitData.asUInt, valid = RegNext(s1_fire))
       XSPerfAccumulate("port_" + i + "_hit_in_ideal_icache_num", diff_ideal_event.io.hitInIdealCache && RegNext(s1_fire))
-      diff_ideal_event
     }
     when (s2_port_hit(1) && s2_fire && s2_double_line) {
       printf("<%d> port1 hit in ideal:paddr=0x%x, hitData=0x%x \n", GTimer(),s2_req_paddr(1), s2_hit_datas(1))
@@ -779,13 +782,6 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
     when (s2_port_hit(0) && s2_fire) {
       printf("<%d> port0 hit in ideal:paddr=0x%x, hitData=0x%x \n",GTimer(),s2_req_paddr(0), s2_hit_datas(0))
     }
-  } else {
-    s2_port_hit     := RegEnable(s1_port_hit, s1_fire)
-    s2_hit_datas    := VecInit(s2_data_cacheline.zipWithIndex.map { case(bank, i) =>
-      val port_hit_data = Mux1H(s2_tag_match_vec(i).asUInt, bank)
-      port_hit_data
-    })
-  }
 
   /** response to IFU */
 
@@ -794,8 +790,8 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
        else   toIFU(i).valid          := s2_fire && s2_double_line
     //when select is high, use sramData. Otherwise, use registerData.
     toIFU(i).bits.registerData  := s2_register_datas(i)
-    toIFU(i).bits.sramData  := Mux(s2_port_hit(i), s2_hit_datas(i), s2_prefetch_hit_data(i))
-    toIFU(i).bits.select    := s2_port_hit(i) || s2_prefetch_hit(i)
+    toIFU(i).bits.sramData  := s2_hit_datas(i) //Mux(s2_port_hit(i), s2_hit_datas(i), s2_prefetch_hit_data(i))
+    toIFU(i).bits.select    := s2_port_hit(i)// || s2_prefetch_hit(i)
     toIFU(i).bits.paddr     := s2_req_paddr(i)
     toIFU(i).bits.vaddr     := s2_req_vaddr(i)
     toIFU(i).bits.tlbExcp.pageFault     := s2_except_pf(i)
