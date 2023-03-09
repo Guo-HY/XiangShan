@@ -133,3 +133,25 @@ class IPFBufferMove(implicit p: Parameters) extends  IPrefetchBundle{
   val vsetIdx = Output(UInt(idxBits.W))
   val waymask = Input(UInt(nWays.W))
 }
+
+class read_ideal_icache(implicit p: Parameters) extends BlackBox {
+  val io = IO(new Bundle {
+    val clock = Input(UInt(1.W))
+    val gtimer = Input(UInt(64.W))
+    val valid = Input(UInt(1.W))
+    val port = Input(UInt(1.W))
+    val paddr = Input(UInt(64.W))
+    val hitInIdealICache = Output(UInt(1.W))
+    val hitData = Output(UInt(512.W))
+  })
+}
+
+class refill_ideal_icache(implicit p: Parameters) extends BlackBox {
+  val io = IO(new Bundle{
+    val clock = Input(UInt(1.W))
+    val gtimer = Input(UInt(64.W))
+    val valid = Input(UInt(1.W))
+    val paddr = Input(UInt(64.W))
+    val data = Input(UInt(512.W))
+  })
+}

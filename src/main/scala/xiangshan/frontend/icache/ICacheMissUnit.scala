@@ -192,21 +192,16 @@ class ICacheMissEntry(edge: TLEdgeOut, id: Int)(implicit p: Parameters) extends 
     }
   }
 
-  if (env.EnableDifftest && DebugFlags.use_ideal_icache) {
-    val diff_ideal_event = Module(new DifftestICacheIdealRefill)
-    diff_ideal_event.io.clock := clock
-    diff_ideal_event.io.paddr := req.paddr
-    diff_ideal_event.io.coreid := 0.U
-    diff_ideal_event.io.index := 0.U
-    diff_ideal_event.io.valid := io.meta_write.fire
-    diff_ideal_event.io.data_vec := respDataReg.asUInt.asTypeOf(diff_ideal_event.io.data_vec)
-    when (io.meta_write.fire) {
-      printf("<%d> refill ideal:paddr=0x%x,data_vec=0x%x_%x_%x_%x_%x_%x_%x_%x,respDataReg=0x%x\n", GTimer(), diff_ideal_event.io.paddr,
-        diff_ideal_event.io.data_vec(0), diff_ideal_event.io.data_vec(1),diff_ideal_event.io.data_vec(2),
-        diff_ideal_event.io.data_vec(3),diff_ideal_event.io.data_vec(4),diff_ideal_event.io.data_vec(5),
-        diff_ideal_event.io.data_vec(6),diff_ideal_event.io.data_vec(7),respDataReg.asUInt)
-    }
-  }
+    val dpi_ideal_event = Module(new refill_ideal_icache)
+  dpi_ideal_event.io.gtimer := GTimer()
+  dpi_ideal_event.io.clock := clock.asBool
+    dpi_ideal_event.io.valid := io.meta_write.fire
+    dpi_ideal_event.io.paddr := req.paddr
+    dpi_ideal_event.io.data := respDataReg.asUInt
+      when (io.meta_write.fire) {
+//        printf("<%d> refill ideal:paddr=0x%x,data=0x%x\n", GTimer(), req.paddr, respDataReg.asUInt)
+      }
+
 
   XSPerfAccumulate(
     "entryPenalty" + Integer.toString(id, 10),

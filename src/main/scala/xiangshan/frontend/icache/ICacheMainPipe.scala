@@ -394,18 +394,6 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
 
   XSPerfAccumulate("mainPipe_stage1_block_by_piq_cycles", s1_valid && s1_wait)
 
-  val diff_ideal_events = (0 until PortNumber).map { i =>
-    val diff_ideal_event = Module(new DifftestICacheIdealRead)
-    diff_ideal_event.io.clock := clock
-    diff_ideal_event.io.coreid := 0.U
-    diff_ideal_event.io.index := i.U
-    if (i == 0) { diff_ideal_event.io.valid := s1_fire } else {
-      diff_ideal_event.io.valid := s1_fire && s1_double_line
-    }
-    diff_ideal_event.io.paddr := s1_req_paddr(i)
-    diff_ideal_event
-  }
-
   /**
     ******************************************************************************
     * ICache Stage 2
@@ -770,18 +758,26 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule
     else    bank    := Mux(miss_0_s2_1_latch,reservedRefillData(0), Mux(miss_1_s2_1_latch,reservedRefillData(1), missSlot(1).m_data))
   }
 
-    (0 until PortNumber).foreach { i =>
-      val diff_ideal_event = diff_ideal_events(i)
-      s2_port_hit(i) := ResultHoldBypass(data = diff_ideal_event.io.hitInIdealCache, valid = RegNext(s1_fire))
-      s2_hit_datas(i) := ResultHoldBypass(data = diff_ideal_event.io.hitData.asUInt, valid = RegNext(s1_fire))
-      XSPerfAccumulate("port_" + i + "_hit_in_ideal_icache_num", diff_ideal_event.io.hitInIdealCache && RegNext(s1_fire))
-    }
-    when (s2_port_hit(1) && s2_fire && s2_double_line) {
-      printf("<%d> port1 hit in ideal:paddr=0x%x, hitData=0x%x \n", GTimer(),s2_req_paddr(1), s2_hit_datas(1))
-    }
-    when (s2_port_hit(0) && s2_fire) {
-      printf("<%d> port0 hit in ideal:paddr=0x%x, hitData=0x%x \n",GTimer(),s2_req_paddr(0), s2_hit_datas(0))
-    }
+  val dpi_ideal_events = (0 until PortNumber)map { i =>
+    val dpi_ideal_event = Module(new read_ideal_icache)
+    dpi_ideal_event.io.gtimer := GTimer()
+    dpi_ideal_event.io.clock := clock.asBool
+    if (i == 0) { dpi_ideal_event.io.valid := RegNext(s1_fire) } else { dpi_ideal_event.io.valid := RegNext(s1_fire) && s2_double_line }
+    dpi_ideal_event.io.port := i.U
+    dpi_ideal_event.io.paddr := s2_req_paddr(i)
+
+    s2_port_hit(i) := ResultHoldBypass(data = dpi_ideal_event.io.hitInIdealICache, valid = RegNext(s1_fire))
+    s2_hit_datas(i) := ResultHoldBypass(data = dpi_ideal_event.io.hitData, valid = RegNext(s1_fire))
+    XSPerfAccumulate("port_" + i + "_hit_in_ideal_icache_num", dpi_ideal_event.io.hitInIdealICache.asBool && RegNext(s1_fire))
+    dpi_ideal_event
+  }
+
+      when (s2_port_hit(1) && s2_fire && s2_double_line) {
+//        printf("<%d> port1 hit in ideal:paddr=0x%x, hitData=0x%x \n", GTimer(),s2_req_paddr(1), s2_hit_datas(1))
+      }
+      when (s2_port_hit(0) && s2_fire) {
+//        printf("<%d> port0 hit in ideal:paddr=0x%x, hitData=0x%x \n",GTimer(),s2_req_paddr(0), s2_hit_datas(0))
+      }
 
   /** response to IFU */
 
