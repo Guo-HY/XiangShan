@@ -26,6 +26,7 @@ import xiangshan.cache.mmu._
 import xiangshan.frontend._
 import utility._
 import xiangshan.XSCoreParamsKey
+import huancun.{PreferCacheKey}
 
 
 abstract class IPrefetchBundle(implicit p: Parameters) extends ICacheBundle
@@ -686,7 +687,7 @@ class PIQEntry(edge: TLEdgeOut, id: Int)(implicit p: Parameters) extends IPrefet
   val respDataReg = Reg(Vec(refillCycles,UInt(beatBits.W)))
 
   //to main pipe s1
-  io.prefetch_entry_data.valid := state =/= s_idle
+  io.prefetch_entry_data.valid := state =/= s_idle && prefetchToL1.asBool
   io.prefetch_entry_data.bits.vSetIdx := req_idx
   io.prefetch_entry_data.bits.ptage := req_tag
   io.prefetch_entry_data.bits.cacheline := respDataReg.asUInt
@@ -704,49 +705,68 @@ class PIQEntry(edge: TLEdgeOut, id: Int)(implicit p: Parameters) extends IPrefet
   when (state === s_idle) { needflush_r := false.B }
   when (state =/= s_idle && io.fencei) { needflush_r := true.B }
   val needflush = needflush_r | io.fencei
-
   //state change
-  switch(state){
-    is(s_idle){
-      when(io.req.fire()){
-        readBeatCnt := 0.U
-        state := s_memReadReq
-        req := io.req.bits
+  if (prefetchToL1) {
+    switch(state){
+      is(s_idle){
+        when(io.req.fire()){
+          readBeatCnt := 0.U
+          state := s_memReadReq
+          req := io.req.bits
+        }
       }
-    }
 
-    // memory request
-    is(s_memReadReq){
-      when(io.mem_acquire.fire()){
-        state := s_memReadResp
+      // memory request
+      is(s_memReadReq){
+        when(io.mem_acquire.fire()){
+          state := s_memReadResp
+        }
       }
-    }
 
-    is(s_memReadResp){
-      when (edge.hasData(io.mem_grant.bits)) {
-        when (io.mem_grant.fire()) {
-          readBeatCnt := readBeatCnt + 1.U
-          respDataReg(readBeatCnt) := io.mem_grant.bits.data
-          when (readBeatCnt === (refillCycles - 1).U) {
-            assert(refill_done, "refill not done!")
-            state := s_write_back
+      is(s_memReadResp){
+        when (edge.hasData(io.mem_grant.bits)) {
+          when (io.mem_grant.fire()) {
+            readBeatCnt := readBeatCnt + 1.U
+            respDataReg(readBeatCnt) := io.mem_grant.bits.data
+            when (readBeatCnt === (refillCycles - 1).U) {
+              assert(refill_done, "refill not done!")
+              state := s_write_back
+            }
           }
         }
       }
-    }
 
-    is(s_write_back){
-      state := Mux(io.piq_write_ipbuffer.fire() || needflush, s_finish, s_write_back)
-    }
+      is(s_write_back){
+        state := Mux(io.piq_write_ipbuffer.fire() || needflush, s_finish, s_write_back)
+      }
 
-    is(s_finish){
-      state := s_idle
+      is(s_finish){
+        state := s_idle
+      }
+    }
+  } else  {
+    switch(state) {
+      is(s_idle) {
+        when(io.req.fire()) {
+          state := s_memReadReq
+          req := io.req.bits
+        }
+      }
+
+      // memory request
+      is(s_memReadReq) {
+        when(io.mem_acquire.fire()) {
+          state := s_idle
+        }
+      }
     }
   }
 
+
+
   //refill write and meta write
   //WARNING: Maybe could not finish refill in 1 cycle
-  io.piq_write_ipbuffer.valid := (state === s_write_back) && !needflush
+  io.piq_write_ipbuffer.valid := (state === s_write_back) && !needflush && prefetchToL1.asBool
   io.piq_write_ipbuffer.bits.meta.tag := req_tag
   io.piq_write_ipbuffer.bits.meta.index := req_idx
   io.piq_write_ipbuffer.bits.meta.paddr := req.paddr
@@ -759,9 +779,20 @@ class PIQEntry(edge: TLEdgeOut, id: Int)(implicit p: Parameters) extends IPrefet
   XSPerfAccumulate("PrefetchEntryReq" + Integer.toString(id, 10), io.req.fire())
 
   //mem request
-  io.mem_acquire.bits  := edge.Get(
-    fromSource      = io.id,
-    toAddress       = Cat(req.paddr(PAddrBits - 1, log2Ceil(blockBytes)), 0.U(log2Ceil(blockBytes).W)),
-    lgSize          = (log2Up(cacheParams.blockBytes)).U)._2
+  io.mem_acquire.bits  := DontCare
+  if (prefetchToL1) {
+    io.mem_acquire.bits := edge.Get(
+      fromSource      = io.id,
+      toAddress       = Cat(req.paddr(PAddrBits - 1, log2Ceil(blockBytes)), 0.U(log2Ceil(blockBytes).W)),
+      lgSize          = (log2Up(cacheParams.blockBytes)).U)._2
+  } else {
+    io.mem_acquire.bits := edge.Hint(
+      fromSource = io.id,
+      toAddress = addrAlign(req.paddr, blockBytes, PAddrBits) + blockBytes.U,
+      lgSize = (log2Up(cacheParams.blockBytes)).U,
+      param = TLHints.PREFETCH_READ
+    )._2
+    io.mem_acquire.bits.user.lift(PreferCacheKey).foreach(_ := true.B)
+  }
 
 }

@@ -47,6 +47,7 @@ case class ICacheParameters(
     nPrefBufferEntries: Int = 64,
     prefetchPipeNum: Int = 2,
     hasPrefetch: Boolean = true,
+    prefetchToL1: Boolean = true,
     nMMIOs: Int = 1,
     blockBytes: Int = 64
 )extends L1CacheParameters {
@@ -94,6 +95,7 @@ trait HasICacheParameters extends HasL1CacheParameters with HasInstrMMIOConst wi
   def nIPFBufferSize   = cacheParams.nPrefBufferEntries
   def maxIPFMoveConf   = 1 // temporary use small value to cause more "move" operation
   def prefetchPipeNum = ICacheParameters().prefetchPipeNum
+  def prefetchToL1 = ICacheParameters().prefetchToL1
 
   def getBits(num: Int) = log2Ceil(num).W
 
@@ -534,6 +536,7 @@ class ICacheImp(outer: ICache) extends LazyModuleImp(outer) with HasICacheParame
     println("  nPrefetchEntries: "         + cacheParams.nPrefetchEntries)
     println("  nPrefetchBufferEntries: " + cacheParams.nPrefBufferEntries)
     println("  prefetchPipeNum: " + cacheParams.prefetchPipeNum)
+    println("  prefetchToL1: " + cacheParams.prefetchToL1)
   }
 
   val (bus, edge) = outer.clientNode.out.head
